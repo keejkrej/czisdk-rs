@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     println!("cargo:rerun-if-env-changed=LIBCZI_INCLUDE_DIR");
@@ -24,9 +24,21 @@ fn main() {
         };
         println!("cargo:rustc-link-lib={kind}={lib_name}");
     } else if let Ok(library) = vcpkg::Config::new()
+        .cargo_metadata(false)
         .emit_includes(true)
         .find_package("libczi")
     {
+        for link_path in &library.link_paths {
+            println!("cargo:rustc-link-search=native={}", link_path.display());
+        }
+        for dll_path in &library.dll_paths {
+            println!("cargo:rustc-link-search=native={}", dll_path.display());
+        }
+        for found_lib in &library.found_libs {
+            let link_name = link_name_for_path(found_lib);
+            let kind = if library.is_static { "static" } else { "dylib" };
+            println!("cargo:rustc-link-lib={kind}={link_name}");
+        }
         include_dirs.extend(library.include_paths);
     } else {
         panic!(
@@ -48,4 +60,17 @@ fn main() {
     }
 
     build.compile("czisdk_rs_bridge");
+}
+
+fn link_name_for_path(path: &Path) -> String {
+    let stem = path
+        .file_stem()
+        .expect("vcpkg library path has no file stem")
+        .to_string_lossy();
+
+    if path.extension().and_then(|extension| extension.to_str()) == Some("a") {
+        stem.strip_prefix("lib").unwrap_or(&stem).to_owned()
+    } else {
+        stem.into_owned()
+    }
 }

@@ -7,27 +7,32 @@ fn main() {
     println!("cargo:rerun-if-env-changed=LIBCZI_LIB_NAME");
     println!("cargo:rerun-if-env-changed=LIBCZI_STATIC");
     println!("cargo:rerun-if-env-changed=VCPKG_ROOT");
+    println!("cargo:rerun-if-env-changed=VCPKGRS_TRIPLET");
     println!("cargo:rerun-if-changed=native/czisdk_rs.cpp");
 
     let mut include_dirs = Vec::new();
+    let static_link;
 
     if let (Ok(include_dir), Ok(lib_dir)) =
         (env::var("LIBCZI_INCLUDE_DIR"), env::var("LIBCZI_LIB_DIR"))
     {
         include_dirs.push(PathBuf::from(include_dir));
         println!("cargo:rustc-link-search=native={lib_dir}");
-        let lib_name = env::var("LIBCZI_LIB_NAME").unwrap_or_else(|_| "libCZI".to_owned());
         let kind = if env::var_os("LIBCZI_STATIC").is_some() {
             "static"
         } else {
             "dylib"
         };
+        static_link = kind == "static";
+        let lib_name =
+            env::var("LIBCZI_LIB_NAME").unwrap_or_else(|_| default_lib_name(static_link));
         println!("cargo:rustc-link-lib={kind}={lib_name}");
     } else if let Ok(library) = vcpkg::Config::new()
         .cargo_metadata(false)
         .emit_includes(true)
         .find_package("libczi")
     {
+        static_link = library.is_static;
         for link_path in &library.link_paths {
             println!("cargo:rustc-link-search=native={}", link_path.display());
         }
@@ -54,6 +59,14 @@ fn main() {
         .file("native/czisdk_rs.cpp")
         .warnings(false);
 
+    if static_link {
+        build.define("_LIBCZISTATICLIB", None);
+
+        if cfg!(target_os = "windows") {
+            println!("cargo:rustc-link-lib=dylib=windowscodecs");
+        }
+    }
+
     for include_dir in include_dirs {
         build.include(&include_dir);
         build.include(include_dir.join("libCZI"));
@@ -72,5 +85,15 @@ fn link_name_for_path(path: &Path) -> String {
         stem.strip_prefix("lib").unwrap_or(&stem).to_owned()
     } else {
         stem.into_owned()
+    }
+}
+
+fn default_lib_name(static_link: bool) -> String {
+    if cfg!(target_os = "windows") && static_link {
+        "libCZIStatic".to_owned()
+    } else if cfg!(target_os = "windows") {
+        "libCZI".to_owned()
+    } else {
+        "CZI".to_owned()
     }
 }

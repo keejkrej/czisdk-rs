@@ -31,7 +31,9 @@ If `libCZI` is already installed somewhere else:
 LIBCZI_INCLUDE_DIR=/prefix/include LIBCZI_LIB_DIR=/prefix/lib cargo build
 ```
 
-If the library name is not `libCZI`, set `LIBCZI_LIB_NAME`.
+Set `LIBCZI_STATIC=1` to link a static installation. If the Cargo link name is
+not `CZI` on Unix or `libCZIStatic` for static Windows builds, set
+`LIBCZI_LIB_NAME`.
 
 ## License note
 

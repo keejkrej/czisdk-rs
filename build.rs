@@ -1,4 +1,5 @@
 use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 fn main() {
@@ -33,12 +34,14 @@ fn main() {
         .find_package("libczi")
     {
         static_link = library.is_static;
-        for link_path in &library.link_paths {
-            println!("cargo:rustc-link-search=native={}", link_path.display());
-        }
-        for dll_path in &library.dll_paths {
-            println!("cargo:rustc-link-search=native={}", dll_path.display());
-        }
+        let staged_lib_dir = stage_link_libraries(
+            &PathBuf::from(env::var_os("OUT_DIR").unwrap_or_else(|| Path::new(".").into())),
+            &library.found_libs,
+        );
+        println!(
+            "cargo:rustc-link-search=native={}",
+            staged_lib_dir.display()
+        );
         for found_lib in &library.found_libs {
             let link_name = link_name_for_path(found_lib);
             let kind = if library.is_static { "static" } else { "dylib" };
@@ -73,6 +76,22 @@ fn main() {
     }
 
     build.compile("czisdk_rs_bridge");
+}
+
+fn stage_link_libraries(out_dir: &Path, libs: &[PathBuf]) -> PathBuf {
+    let staged_dir = out_dir.join("czi-rs-links");
+    fs::create_dir_all(&staged_dir).expect("unable to create staged czi library directory");
+
+    for lib in libs {
+        let lib_name = lib.file_name().unwrap_or_else(|| lib.as_os_str());
+        let staged_lib = staged_dir.join(lib_name);
+        if !staged_lib.exists() {
+            fs::copy(lib, &staged_lib)
+                .unwrap_or_else(|err| panic!("failed to stage czi library {}: {err}", lib.display()));
+        }
+    }
+
+    staged_dir
 }
 
 fn link_name_for_path(path: &Path) -> String {
